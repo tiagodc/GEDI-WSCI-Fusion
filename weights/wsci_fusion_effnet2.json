@@ -6,7 +6,7 @@
     "dropout": 0.2,
     "buffer": 4
   },
-  "name": "GEDI L4C WSCI Fusion - effnet2.3",
+  "name": "GEDI L4C WSCI Fusion - effnet2",
   "inputs": [
     "copernicus_dem",
     "palsar2_hh",

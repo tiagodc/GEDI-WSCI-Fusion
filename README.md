@@ -11,7 +11,7 @@ Sentinel-1 + ALOS-2 PALSAR-2 SAR and the Copernicus DEM, trained on GEDI L4C WSC
 | `losses.py` | masked Gaussian NLL (default), Laplace NLL, MSE |
 | `data.py` | cyclic coordinate encoding, training-chip dataset, normalization stats |
 | `wsci_fusion.py` | command line: `predict` (MC dropout + sliding windows) and `train` (scratch / fine-tune) |
-| `weights/wsci_fusion_effnet2.3.json` | released model: config, metadata and all weights as plain-text JSON |
+| `weights/wsci_fusion_effnet2.json` | released model: config, metadata and all weights as plain-text JSON |
 
 ## Installation
 
@@ -139,9 +139,9 @@ python wsci_fusion.py predict -i dem.vrt palsar_2022.vrt s1_2022-07-01-to-2022-1
 # replicate the study (defaults = original hyperparameters)
 python wsci_fusion.py train --train train/*.npz --val val/*.npz -o weights/my_model.json
 # fine-tune the released model (all weights), or only its output layer
-python wsci_fusion.py train --train ... -w weights/wsci_fusion_effnet2.3.json [--freeze] --epochs 10 --lr 1e-4 -o ft.json
+python wsci_fusion.py train --train ... -w weights/wsci_fusion_effnet2.json [--freeze] --epochs 10 --lr 1e-4 -o ft.json
 # new target variable / scale: mean-only head with MSE, or a Laplace likelihood
-python wsci_fusion.py train --train ... -w weights/wsci_fusion_effnet2.3.json --loss mse -o rh98.json
+python wsci_fusion.py train --train ... -w weights/wsci_fusion_effnet2.json --loss mse -o rh98.json
 ```
 Any data pipeline works as long as the stack has the same layers in the same order; `--val` should be
 spatially separate from `--train` (otherwise a random `--val-frac` of chips is used).
@@ -160,7 +160,7 @@ net = WSCIFusionNet(in_channels=12, start_filters=12, n_params=2, dropout=0.2, b
                     mean=[0.0] * 12, std=[1.0] * 12)
 out = net(torch.randn(8, 12, 64, 64))                      # -> (8, 2, 56, 56): mean, variance
 
-model = load_model("weights/wsci_fusion_effnet2.3.json")  # released model, MC dropout on
+model = load_model("weights/wsci_fusion_effnet2.json")  # released model, MC dropout on
 model.set_monte_carlo(False)                              # deterministic predictions
 ```
 `load_weights()` in `model.py` returns the config and `state_dict` of any JSON weights file;

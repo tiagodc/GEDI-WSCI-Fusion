@@ -21,7 +21,7 @@ from data import ChipDataset, channel_stats, geo_layers, load_chips
 from losses import LOSSES, mse, r2
 from model import WSCIFusionNet, load_model, load_weights, save_weights
 
-DEFAULT_WEIGHTS = "weights/wsci_fusion_effnet2.3.json"
+DEFAULT_WEIGHTS = "weights/wsci_fusion_effnet2.json"
 BAND_NAMES = ("Mean WSCI estimate", "Aleatoric Standard Deviation", "Epistemic Standard Deviation",
               "Fraction of valid predictors at inference")
 NODATA = -9999.0
