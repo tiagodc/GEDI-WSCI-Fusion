@@ -4,7 +4,6 @@ title: "GEDI WSCI Fusion: model and code"
 authors:
   - family-names: de Conto
     given-names: Tiago
-license: MIT
 preferred-citation:
   type: article
   title: "Scalable deep fusion of spaceborne lidar and synthetic aperture radar for global forest structural complexity mapping"

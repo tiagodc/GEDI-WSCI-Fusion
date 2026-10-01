@@ -30,9 +30,9 @@ statistics (`(x - mean) / std`).
 | # | layer | source (Google Earth Engine) | values | time step | native res. → 25 m grid | mean | std |
 |---|---|---|---|---|---|---|---|
 | 1 | elevation | Copernicus DEM GLO-30 (`COPERNICUS/DEM/GLO30`) | m | static | 30 m → nearest | 703.59 | 915.71 |
-| 2 | HH | JAXA Global PALSAR-2 yearly mosaic (v2) | DN (uint16, γ⁰) | calendar year | 25 m → nearest | 4690.41 | 2527.36 |
+| 2 | HH | JAXA Global PALSAR-2/PALSAR yearly mosaic v2.5 (`JAXA/ALOS/PALSAR/YEARLY/SAR_EPOCH`) | DN (uint16, γ⁰) | calendar year | 25 m → nearest | 4690.41 | 2527.36 |
 | 3 | HV | same | DN (uint16, γ⁰) | calendar year | 25 m → nearest | 2282.23 | 1451.16 |
-| 4 | angle | same, incidence angle | degrees | calendar year | 25 m → nearest | 36.56 | 10.54 |
+| 4 | angle | same, local incidence angle | degrees | calendar year | 25 m → nearest | 36.56 | 10.54 |
 | 5 | VV | Sentinel-1 IW GRD (`COPERNICUS/S1_GRD`), mean of asc. + desc. scenes | dB (σ⁰) | 3 months | 10 m → bilinear (in GEE) | -10.85 | 3.46 |
 | 6 | VH | same | dB (σ⁰) | 3 months | 10 m → bilinear (in GEE) | -17.78 | 4.16 |
 | 7 | angle | same, ellipsoid incidence angle | degrees | 3 months | 10 m → bilinear (in GEE) | 38.49 | 2.24 |
@@ -54,8 +54,10 @@ statistics (`(x - mean) / std`).
 
 ## Training data (original model)
 
-- **Target**: GEDI L4C WSCI footprints (v2), filtered for quality: quality-filtered shots with
-  3 m < RH98 < 150 m, WSCI < 15, excluding ESA WorldCover classes built-up, bare, snow/ice and water.
+- **Target**: GEDI L4C WSCI footprints from GEDI **version 2 (v002)** (L2A quality filtering), further
+  restricted to 3 m < RH98 < 150 m (`rh_opt_098` 300–15000 cm), WSCI < 15 and ESA WorldCover v200 classes
+  other than built-up (50), bare/sparse (60), snow/ice (70) and permanent water (80). GEDI v3 filtering
+  was not used for this model.
   Footprint WSCI was **averaged per ~25 m cell and quarter** (EASE-Grid 2.0, EPSG:6933) and brought to
   the chip grid by nearest neighbour. Pixels without footprints are NaN (→ 0, ignored by the loss).
 - **Period**: 15 quarters, Apr 2019 – Dec 2022; global GEDI coverage (~52° S – 52° N).
@@ -64,9 +66,9 @@ statistics (`(x - mean) / std`).
   ≥ 16 valid target pixels (1 %), a non-empty input stack and ≥ 16 non-zero values at target pixels in
   each of layers 1–7.
 - **Split**: 80 / 20 training / validation by ~80 km tile (spatial blocks).
-- **Chip grid caveat**: the original training chips used EPSG:4326 pixels of 2.594e-4° (lon) ×
-  2.264e-4° (lat) (a single 25 m EASE-Grid cell converted to degrees), whereas the product was predicted
-  on the square 2.2458e-4° grid above. For new chips, use the inference grid.
+- **Chip grid**: chips are square 40×40 pixel windows extracted from a WGS84 (EPSG:4326) grid of ~25 m
+  pixels, so their ground size varies slightly with location (geographic projection); the product was
+  predicted on the 2.2458e-4° grid above, which is also the recommended grid for new chips.
 
 ## Model
 
