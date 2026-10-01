@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use this model or code, please cite the article below."
+title: "GEDI WSCI Fusion: model and code"
+authors:
+  - family-names: de Conto
+    given-names: Tiago
+license: MIT
+preferred-citation:
+  type: article
+  title: "Scalable deep fusion of spaceborne lidar and synthetic aperture radar for global forest structural complexity mapping"
+  authors:
+    - family-names: de Conto
+      given-names: Tiago
+    - family-names: Armston
+      given-names: John
+    - family-names: Dubayah
+      given-names: Ralph
+  journal: "Machine Learning: Earth"
+  volume: 2
+  issue: 1
+  start: "015002"
+  year: 2025
+  doi: 10.1088/3049-4753/ae2c01

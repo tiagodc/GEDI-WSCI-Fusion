@@ -1,0 +1,9 @@
+name: gedi_wsci_fusion
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python>=3.10
+  - pytorch>=2.0   # conda-forge installs the CUDA build when an NVIDIA driver is present
+  - numpy
+  - rasterio
