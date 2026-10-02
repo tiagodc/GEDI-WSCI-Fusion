@@ -45,8 +45,7 @@ statistics (`(x - mean) / std`).
 - **Alignment**: PALSAR-2 (on its own 25 m lattice, 0.67 px off the S1 grid) and the DEM were snapped
   to the Sentinel-1 grid with GDAL VRTs and nearest-neighbour resampling
   (`gdalbuildvrt -te <S1 bounds> -tr 2.2457882e-4 2.2457882e-4 -r nearest`).
-- **No-data** is 0 (NaN and raster no-data values are set to 0 before the network); the statistics above
-  include those zeros.
+- **No-data** is 0 (NaN and raster no-data values are set to 0 before the network).
 - **Coordinates** (layers 8–10) are computed from pixel centers (`data.geo_layers`); `predict` adds them
   automatically, so input rasters only carry layers 1–7.
 - **Screening at inference**: a 40×40 window is skipped if any of layers 1–7 is entirely 0/NaN; a
@@ -54,10 +53,9 @@ statistics (`(x - mean) / std`).
 
 ## Training data (original model)
 
-- **Target**: GEDI L4C WSCI footprints from GEDI **version 2 (v002)** (L2A quality filtering), further
-  restricted to 3 m < RH98 < 150 m (`rh_opt_098` 300–15000 cm), WSCI < 15 and ESA WorldCover v200 classes
-  other than built-up (50), bare/sparse (60), snow/ice (70) and permanent water (80). GEDI v3 filtering
-  was not used for this model.
+- **Target**: GEDI L4C WSCI footprints from GEDI **version 2 (v002)** (L4C quality filtering), further
+  restricted to 3 m < RH98 < 150 m (`rh_098` 300–15000 cm), WSCI < 15 and ESA WorldCover v200 classes
+  other than built-up (50), bare/sparse (60), snow/ice (70) and permanent water (80).
   Footprint WSCI was **averaged per ~25 m cell and quarter** (EASE-Grid 2.0, EPSG:6933) and brought to
   the chip grid by nearest neighbour. Pixels without footprints are NaN (→ 0, ignored by the loss).
 - **Period**: 15 quarters, Apr 2019 – Dec 2022; global GEDI coverage (~52° S – 52° N).
@@ -69,6 +67,16 @@ statistics (`(x - mean) / std`).
 - **Chip grid**: chips are square 40×40 pixel windows extracted from a WGS84 (EPSG:4326) grid of ~25 m
   pixels, so their ground size varies slightly with location (geographic projection); the product was
   predicted on the 2.2458e-4° grid above, which is also the recommended grid for new chips.
+- **Tooling**: GEDI data were extracted, gridded and spatially organized with the
+  [`gedih3`](https://github.com/tiagodc/GEDI-H3) package, aggregating footprints with the
+  [EGI indexing system](https://tiagodc.github.io/GEDI-H3/concepts/egi-indexing.html); this is the
+  recommended tooling to reproduce the generation of training chips. EGI levels matching the scales above:
+
+  | Scale | Size | EGI level |
+  |-------|------|-----------|
+  | Pixel | ~25 m | 3 |
+  | Chip (40×40 px) | ~1 km | 6 |
+  | Spatial block (train/val split tile) | ~80 km | 11 |
 
 ## Model
 
@@ -99,8 +107,8 @@ FixedNormalization -> Conv3x3(10->F) BN ReLU6
 |---|---|
 | loss | masked Gaussian NLL, ½ log σ² + (y − μ)² / 2σ², over pixels with target > 0 |
 | optimizer | Adam, lr 1e-3, no weight decay |
-| schedule | lr × 0.1 at 10 %, 20 % and 50 % of the epochs (epochs 5, 10, 25) |
-| epochs / batch | 50 / 96 (best validation loss at epoch 43; early-stopping patience 10) |
+| schedule | lr × 0.1 at 10 %, 20 % and 50 % of the epochs |
+| epochs / batch | 50 / 96 |
 | dropout / buffer / chip | 0.2 / 4 px / 40×40 px |
 
 Released model validation NLL: −0.321 (all validation chips, MC dropout on); RMSE 0.50 WSCI on the
