@@ -1,3 +1,4 @@
+# Copyright (c) 2026 University of Maryland. Released under the MIT License (see LICENSE).
 """Masked losses for sparse targets: only pixels with `target > 0` contribute.
 
 `pred` is (B, P, H, W) and `target` is (B, H, W). GEDI footprints cover ~1% of the pixels in a

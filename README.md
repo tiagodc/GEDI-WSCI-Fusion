@@ -193,3 +193,8 @@ forests with spaceborne lidar. *Nature Communications* 15, 8116. https://doi.org
 
 GEDI L4C Footprint Level Waveform Structural Complexity Index, Version 2. ORNL DAAC.
 https://doi.org/10.3334/ORNLDAAC/2338
+
+## License
+
+Released under the [MIT License](LICENSE). Copyright (c) 2026 University of Maryland.
+This applies to the code and the model weights in this repository.

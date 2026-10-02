@@ -1,3 +1,4 @@
+# Copyright (c) 2026 University of Maryland. Released under the MIT License (see LICENSE).
 """WSCI Fusion CNN: a fully-convolutional EfficientNetV2-style regressor with Monte Carlo dropout.
 
 The network keeps the input resolution throughout (no strides / pooling), predicts a per-pixel

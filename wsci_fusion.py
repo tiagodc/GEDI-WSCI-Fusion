@@ -1,3 +1,4 @@
+# Copyright (c) 2026 University of Maryland. Released under the MIT License (see LICENSE).
 """Predict or train the GEDI L4C WSCI Fusion model.
 
     python wsci_fusion.py predict -i stack.tif -o wsci.tif

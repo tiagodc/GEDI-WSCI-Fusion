@@ -1,3 +1,4 @@
+# Copyright (c) 2026 University of Maryland. Released under the MIT License (see LICENSE).
 """Input helpers: cyclic coordinate encoding, training chips and normalization statistics."""
 
 import numpy as np
