@@ -12,6 +12,7 @@ Sentinel-1 + ALOS-2 PALSAR-2 SAR and the Copernicus DEM, trained on GEDI L4C WSC
 | `data.py` | cyclic coordinate encoding, training-chip dataset, normalization stats |
 | `wsci_fusion.py` | command line: `predict` (MC dropout + sliding windows) and `train` (scratch / fine-tune) |
 | `weights/wsci_fusion_effnet2.json` | released model: config, metadata and all weights as plain-text JSON |
+| `tests/test_predict.py` | `predict` regressions on synthetic rasters (`python -m pytest tests`) |
 
 ## Installation
 
@@ -30,9 +31,9 @@ statistics (`(x - mean) / std`).
 | # | layer | source (Google Earth Engine) | values | time step | native res. → 25 m grid | mean | std |
 |---|---|---|---|---|---|---|---|
 | 1 | elevation | Copernicus DEM GLO-30 (`COPERNICUS/DEM/GLO30`) | m | static | 30 m → nearest | 703.59 | 915.71 |
-| 2 | HH | JAXA Global PALSAR-2/PALSAR yearly mosaic v2.5 (`JAXA/ALOS/PALSAR/YEARLY/SAR_EPOCH`) | DN (uint16, γ⁰) | calendar year | 25 m → nearest | 4690.41 | 2527.36 |
-| 3 | HV | same | DN (uint16, γ⁰) | calendar year | 25 m → nearest | 2282.23 | 1451.16 |
-| 4 | angle | same, local incidence angle | degrees | calendar year | 25 m → nearest | 36.56 | 10.54 |
+| 2 | HH | JAXA Global PALSAR-2/PALSAR yearly mosaic v2.5 (`JAXA/ALOS/PALSAR/YEARLY/SAR_EPOCH`) | DN (uint16, γ⁰) | calendar year | 25 m, on the grid as exported | 4690.41 | 2527.36 |
+| 3 | HV | same | DN (uint16, γ⁰) | calendar year | 25 m, on the grid as exported | 2282.23 | 1451.16 |
+| 4 | angle | same, local incidence angle | degrees | calendar year | 25 m, on the grid as exported | 36.56 | 10.54 |
 | 5 | VV | Sentinel-1 IW GRD (`COPERNICUS/S1_GRD`), mean of asc. + desc. scenes | dB (σ⁰) | 3 months | 10 m → bilinear (in GEE) | -10.85 | 3.46 |
 | 6 | VH | same | dB (σ⁰) | 3 months | 10 m → bilinear (in GEE) | -17.78 | 4.16 |
 | 7 | angle | same, ellipsoid incidence angle | degrees | 3 months | 10 m → bilinear (in GEE) | 38.49 | 2.24 |
@@ -42,9 +43,12 @@ statistics (`(x - mean) / std`).
 
 - **Temporal pairing**: each quarter (Jan–Mar, Apr–Jun, Jul–Sep, Oct–Dec; end date exclusive) uses
   the Sentinel-1 composite of that quarter and the PALSAR-2 mosaic of the same calendar year.
-- **Alignment**: PALSAR-2 (on its own 25 m lattice, 0.67 px off the S1 grid) and the DEM were snapped
-  to the Sentinel-1 grid with GDAL VRTs and nearest-neighbour resampling
-  (`gdalbuildvrt -te <S1 bounds> -tr 2.2457882e-4 2.2457882e-4 -r nearest`).
+- **Alignment**: the PALSAR-2 exports (EPSG:4326, 25 m, no resampling) have the Sentinel-1 grid's x origin
+  and pixel size and are offset from it by a whole number of rows, so they already sit on the Sentinel-1
+  grid. The DEM was snapped to the Sentinel-1 grid with nearest-neighbour resampling. One GDAL VRT per
+  input over the full Sentinel-1 extent does both
+  (`gdalbuildvrt -te <S1 bounds> -tr 2.2457882102988038e-4 2.2457882102988038e-4 -r nearest`). Keep the
+  full extent: `--chip-phase` (below) counts columns and rows from the Sentinel-1 grid's corner.
 - **No-data** is 0 (NaN and raster no-data values are set to 0 before the network).
 - **Coordinates** (layers 8–10) are computed from pixel centers (`data.geo_layers`); `predict` adds them
   automatically, so input rasters only carry layers 1–7.
@@ -129,15 +133,36 @@ independent posterior sample. Per pixel:
 | 4 | fraction of the 10 input layers that are non-zero |
 
 Total uncertainty = √(aleatoric² + epistemic²). The outer 40 px of the processed area are left empty
-(not covered by every pass). The published product additionally masks permanent water and no-data
-with ESA WorldCover v200 (class 80 / 0) and is cut into 1°×1° Cloud-Optimized GeoTIFFs.
+(not covered by every pass).
+
+**Chip grid.** Where the chips fall matters: moving the 32 px chip grid by one pixel changes mean WSCI
+systematically by about 0.01. The product's block reads started on Sentinel-1-grid columns ≡ 23 and rows
+≡ 15 (mod 32) south of 60.0° N, and on rows ≡ 24 north of it (from the origins of its prediction cubes).
+`predict` starts every block read on `--chip-phase` (default `23 15`; this adds up to 31 px of context), so
+the chips do not depend on `--bbox` and match the product's when the inputs cover the full Sentinel-1
+grid. Use `--chip-phase 23 24` north of 60.0° N.
+
+**Numerics.** Inference is strict fp32. `predict` turns off TF32, which PyTorch enables by default for
+cuDNN convolutions on Ampere and newer GPUs and which moves outputs by up to 2e-3 WSCI.
+
+The published product differs from a plain `predict` run in four ways:
+- **Pixel mask**: permanent water and no-data are masked with ESA WorldCover v200 (class 80 / 0,
+  mode-resampled), as are pixels with mean WSCI ≤ 0.
+- **Blocks**: only blocks that intersect land (world administrative boundaries) were predicted. North of
+  60° N, and south of it in some quarters (most Q3/Q4 of 2015–2020), a block also needed ESA WorldCover
+  vegetation somewhere inside it.
+- **Grid**: the 1°×1° Cloud-Optimized GeoTIFFs are on a release grid that is not the Sentinel-1 grid:
+  origin (−177.69170364307112, 75.113759062371685), pixel 2.2457866777844e-4° (6.8e-7 smaller in relative
+  terms, up to 1.1 px of drift at the east edge). Each release pixel holds the value of the nearest
+  Sentinel-1-grid pixel.
+- **Band names**: band 2 of the 2015–2022 files is described as `Alleatoric Standard Deviation` (sic).
 
 ## Usage
 
 **Predict** (inputs must share one grid; bands are concatenated in the given order):
 ```bash
 python wsci_fusion.py predict -i dem.vrt palsar_2022.vrt s1_2022-07-01-to-2022-10-01.vrt -o wsci_2022Q3.tif \
-    [--bbox W S E N] [--offsets 8 12 16 20 24] [--no-mc] [--batch-size 256] [--device auto]
+    [--bbox W S E N] [--chip-phase 23 15] [--offsets 8 12 16 20 24] [--no-mc] [--batch-size 256] [--device auto]
 ```
 
 **Train / fine-tune** on chips stored as `.npz` files with arrays
@@ -176,19 +201,21 @@ model.set_monte_carlo(False)                              # deterministic predic
 
 ## Reproducibility check
 
-`predict` with these weights over 6400×6400 px (−51.2° to −49.8° E, −0.2° to 1.3° N, 2022 Q3) against
-the published product (16 raw product tiles, 30.4 M pixels):
+`predict` with these weights (MC dropout on, GPU) over −51.2° to −49.8° E, −0.2° to 1.3° N, 2022 Q3. It
+was sampled at the 28.8 M valid pixels of the published 1° tiles inside that box (nearest Sentinel-1
+pixel) and compared with the published product. The run-to-run columns compare two independent runs of
+`predict`, which is the MC-dropout noise floor:
 
-| band | bias | RMSE | r |
-|---|---|---|---|
-| mean WSCI | 0.000 | 0.075 | 0.998 |
-| aleatoric std | 0.000 | 0.028 | 0.986 |
-| epistemic std | 0.000 | 0.061 | 0.877 |
-| valid fraction | 0 | 0 | 1 |
+| band | bias | RMSE | r | run-to-run RMSE | run-to-run r |
+|---|---|---|---|---|---|
+| mean WSCI | 0.0008 | 0.0617 | 0.998 | 0.0610 | 0.998 |
+| aleatoric std | −0.0002 | 0.0238 | 0.990 | 0.0230 | 0.991 |
+| epistemic std | −0.0005 | 0.0526 | 0.829 | 0.0526 | 0.830 |
 
-These differences are at the MC-dropout noise floor: two independent runs of `predict` over the same
-area differ by RMSE 0.066 / r 0.998 (mean), 0.025 / 0.991 (aleatoric) and 0.054 / 0.878 (epistemic).
-CPU and GPU runs agree at the same level.
+The systematic part of the difference to the product, δ = √(RMSE² − run-to-run RMSE²), is 0.009 (mean),
+0.006 (aleatoric) and 0.000 (epistemic). The input rasters were exported again after the product was
+made. Before `--chip-phase`, chips started at the box's own corner, and δ was 0.103 for the mean. With MC
+dropout off, CPU and GPU agree to 5e-6.
 
 ## References
 
