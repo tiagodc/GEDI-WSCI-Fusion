@@ -106,6 +106,9 @@ def pixel_lonlat(src, window):
 
 def predict(args):
     device = get_device(args.device)
+    # strict fp32: PyTorch runs cuDNN convolutions in TF32 by default on Ampere and newer GPUs (up to 2e-3 WSCI)
+    torch.backends.cudnn.allow_tf32 = False
+    torch.backends.cuda.matmul.allow_tf32 = False
     model = load_model(args.weights, monte_carlo=not args.no_mc, device=device)
     srcs = [rasterio.open(p) for p in args.input]
     ref = srcs[0]
@@ -128,6 +131,17 @@ def predict(args):
     check = list(range(n_bands))  # all predictor layers, as in the original pipeline
     halo, blk = args.chip, args.block
     R0, C0 = full.row_off, full.col_off
+    step = args.chip - 2 * model.buffer
+    pc, pr = args.chip_phase
+
+    def snap(v, phase):  # last position <= v that is on the chip phase (negative before the raster's edge)
+        return v - (v - phase) % step
+
+    def read(win):  # read a window that may start before the raster's edge: pad that part with no-data (0)
+        r0, c0 = max(0, win.row_off), max(0, win.col_off)
+        inner = Window(c0, r0, win.width - (c0 - win.col_off), win.height - (r0 - win.row_off))
+        x = np.concatenate([s.read(window=inner, masked=True).astype(np.float32).filled(0) for s in srcs])
+        return np.pad(x, ((0, 0), (r0 - win.row_off, 0), (c0 - win.col_off, 0)))
 
     profile = dict(driver="GTiff", width=full.width, height=full.height, count=3 + (model.n_params == 2),
                    dtype="float32", crs=ref.crs, transform=ref.window_transform(full), nodata=NODATA,
@@ -140,10 +154,13 @@ def predict(args):
         blocks = [(r, c) for r in range(R0, R0 + full.height, blk) for c in range(C0, C0 + full.width, blk)]
         for n, (r, c) in enumerate(blocks, 1):
             rb, cb = min(r + blk, R0 + full.height), min(c + blk, C0 + full.width)  # block core end
-            # read the block plus `halo` px of context on every side (clipped to the raster)
-            r0, c0, r1, c1 = max(0, r - halo), max(0, c - halo), min(H, rb + halo), min(W, cb + halo)
+            # read the block plus `halo` px of context on every side; the read starts on the chip phase (up to
+            # `step - 1` px more context, padded with no-data before the raster's edge), so chips fall on the same
+            # raster grid whatever --bbox is
+            r0, c0 = snap(r - halo, pr), snap(c - halo, pc)
+            r1, c1 = min(H, rb + halo), min(W, cb + halo)
             win = Window(c0, r0, c1 - c0, r1 - r0)
-            x = np.concatenate([s.read(window=win, masked=True).astype(np.float32).filled(0) for s in srcs])
+            x = read(win)
             out = None
             if np.nan_to_num(x).any(axis=(1, 2)).all():  # skip blocks with an empty layer
                 if geo:
@@ -268,6 +285,10 @@ def main():
     pp.add_argument("--no-geo", action="store_true", help="do not append cyclic coordinate layers")
     pp.add_argument("--chip", type=int, default=40, help="model input window size")
     pp.add_argument("--block", type=int, default=1600, help="pixels per processing block side")
+    pp.add_argument("--chip-phase", nargs=2, type=int, default=[23, 15], metavar=("COL", "ROW"),
+                    help="raster column/row (modulo the chip stride, 32) where every block read starts, so chips "
+                         "do not depend on --bbox. Default: the product's chip grid on the full Sentinel-1 export "
+                         "grid south of 60.0N; north of it the product used 23 24")
     pp.add_argument("--batch-size", type=int, default=256)
     pp.add_argument("--device", default="auto", help="auto | cuda | cuda:N | cpu")
     pp.set_defaults(func=predict)
