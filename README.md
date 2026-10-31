@@ -138,9 +138,9 @@ Total uncertainty = √(aleatoric² + epistemic²). The outer 40 px of the proce
 **Chip grid.** Where the chips fall matters: moving the 32 px chip grid by one pixel changes mean WSCI
 systematically by about 0.01. The product's block reads started on Sentinel-1-grid columns ≡ 23 and rows
 ≡ 15 (mod 32) south of 60.0° N, and on rows ≡ 24 north of it (from the origins of its prediction cubes).
-`predict` starts every block read on `--chip-phase` (default `23 15`; this adds up to 31 px of context), so
-the chips do not depend on `--bbox` and match the product's when the inputs cover the full Sentinel-1
-grid. Use `--chip-phase 23 24` north of 60.0° N.
+`predict` starts every block read on `--chip-phase` (default `23 15`; this adds up to 31 px of context,
+padded with no-data before the raster's edge), so the chips do not depend on `--bbox` and match the
+product's when the inputs cover the full Sentinel-1 grid. Use `--chip-phase 23 24` north of 60.0° N.
 
 **Numerics.** Inference is strict fp32. `predict` turns off TF32, which PyTorch enables by default for
 cuDNN convolutions on Ampere and newer GPUs and which moves outputs by up to 2e-3 WSCI.

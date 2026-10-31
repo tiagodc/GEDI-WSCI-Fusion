@@ -56,6 +56,22 @@ def test_chips_do_not_depend_on_bbox(stack, tmp_path):
     np.testing.assert_array_equal(ov_a, ov_b)
 
 
+def test_chips_keep_the_phase_at_the_raster_edge(stack, tmp_path):
+    """The full raster and a box well inside it predict the same values where they overlap.
+
+    The full raster's first read starts before the raster's edge (snapped to --chip-phase); it is padded with no-data
+    instead of clamped to the edge, which would shift every chip of the first block row and column off the phase.
+    """
+    a, _ = run(stack, tmp_path / "full.tif", None)
+    b, tb = run(stack, tmp_path / "box.tif", [-51.2 + 100 * RES, 1.3 - 300 * RES, -51.2 + 300 * RES, 1.3 - 100 * RES])
+    dc, dr = round((tb.c + 51.2) / RES), round((1.3 - tb.f) / RES)
+    assert (dc, dr) == (100, 100)
+    ov_a = a[:, dr : dr + b.shape[1], dc : dc + b.shape[2]]
+    valid = b[0] != wsci_fusion.NODATA
+    assert valid.mean() > 0.5
+    np.testing.assert_array_equal(ov_a, b)
+
+
 def test_predict_is_strict_fp32(stack, tmp_path):
     """TF32 is off after predict: PyTorch enables it for cuDNN convolutions by default on Ampere and newer GPUs."""
     torch.backends.cudnn.allow_tf32 = True
