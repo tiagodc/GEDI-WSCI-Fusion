@@ -105,10 +105,18 @@ def pixel_lonlat(src, window):
 
 
 def predict(args):
+    # strict fp32: PyTorch runs cuDNN convolutions in TF32 by default on Ampere and newer GPUs (up to 2e-3 WSCI).
+    # The flags are process-wide, so they are restored afterwards for callers that import predict.
+    saved = torch.backends.cudnn.allow_tf32, torch.backends.cuda.matmul.allow_tf32
+    torch.backends.cudnn.allow_tf32 = torch.backends.cuda.matmul.allow_tf32 = False
+    try:
+        _predict(args)
+    finally:
+        torch.backends.cudnn.allow_tf32, torch.backends.cuda.matmul.allow_tf32 = saved
+
+
+def _predict(args):
     device = get_device(args.device)
-    # strict fp32: PyTorch runs cuDNN convolutions in TF32 by default on Ampere and newer GPUs (up to 2e-3 WSCI)
-    torch.backends.cudnn.allow_tf32 = False
-    torch.backends.cuda.matmul.allow_tf32 = False
     model = load_model(args.weights, monte_carlo=not args.no_mc, device=device)
     srcs = [rasterio.open(p) for p in args.input]
     ref = srcs[0]
@@ -151,9 +159,13 @@ def predict(args):
         names = BAND_NAMES if model.n_params == 2 else BAND_NAMES[:1] + BAND_NAMES[2:]
         for i, name in enumerate(names, 1):
             dst.set_band_description(i, name)
-        blocks = [(r, c) for r in range(R0, R0 + full.height, blk) for c in range(C0, C0 + full.width, blk)]
+        # blocks lie on a fixed grid from the raster's corner and are predicted whole, also where --bbox cuts them:
+        # a block is skipped when one pass has no valid chip in it, so blocks that followed the box's corner made
+        # sparse areas depend on --bbox. Only the part inside --bbox is written.
+        blocks = [(r, c) for r in range(R0 - R0 % blk, R0 + full.height, blk)
+                  for c in range(C0 - C0 % blk, C0 + full.width, blk)]
         for n, (r, c) in enumerate(blocks, 1):
-            rb, cb = min(r + blk, R0 + full.height), min(c + blk, C0 + full.width)  # block core end
+            rb, cb = min(r + blk, H), min(c + blk, W)  # block core end
             # read the block plus `halo` px of context on every side; the read starts on the chip phase (up to
             # `step - 1` px more context, padded with no-data before the raster's edge), so chips fall on the same
             # raster grid whatever --bbox is
@@ -168,8 +180,9 @@ def predict(args):
                 out = predict_array(model, x, args.offsets, args.chip, args.batch_size, check, device)
             if out is None:
                 continue
-            # keep the block core, minus the raster's outer `halo` frame (not covered by every pass)
-            rr0, cc0, rr1, cc1 = max(r, halo), max(c, halo), min(rb, H - halo), min(cb, W - halo)
+            # keep the block core inside --bbox, minus the raster's outer `halo` frame (not covered by every pass)
+            rr0, cc0 = max(r, halo, R0), max(c, halo, C0)
+            rr1, cc1 = min(rb, H - halo, R0 + full.height), min(cb, W - halo, C0 + full.width)
             if rr1 <= rr0 or cc1 <= cc0:
                 continue
             core = out[:, rr0 - r0:rr1 - r0, cc0 - c0:cc1 - c0]
@@ -286,9 +299,11 @@ def main():
     pp.add_argument("--chip", type=int, default=40, help="model input window size")
     pp.add_argument("--block", type=int, default=1600, help="pixels per processing block side")
     pp.add_argument("--chip-phase", nargs=2, type=int, default=[23, 15], metavar=("COL", "ROW"),
-                    help="raster column/row (modulo the chip stride, 32) where every block read starts, so chips "
-                         "do not depend on --bbox. Default: the product's chip grid on the full Sentinel-1 export "
-                         "grid south of 60.0N; north of it the product used 23 24")
+                    help="raster column/row (modulo the chip stride, --chip minus twice the model's buffer: 32 by "
+                         "default) where every block read starts, so chips do not depend on --bbox. Default: the "
+                         "product's chip grid on the full Sentinel-1 export grid south of 60.0N; north of it the "
+                         "product used 23 24 (split a box that crosses 60.0N). 0 0 starts chips at the raster's "
+                         "corner, as before this option existed")
     pp.add_argument("--batch-size", type=int, default=256)
     pp.add_argument("--device", default="auto", help="auto | cuda | cuda:N | cpu")
     pp.set_defaults(func=predict)
