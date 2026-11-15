@@ -140,10 +140,15 @@ systematically by about 0.01. The product's block reads started on Sentinel-1-gr
 ≡ 15 (mod 32) south of 60.0° N, and on rows ≡ 24 north of it (from the origins of its prediction cubes).
 `predict` starts every block read on `--chip-phase` (default `23 15`; this adds up to 31 px of context,
 padded with no-data before the raster's edge), so the chips do not depend on `--bbox` and match the
-product's when the inputs cover the full Sentinel-1 grid. Use `--chip-phase 23 24` north of 60.0° N.
+product's when the inputs cover the full Sentinel-1 grid. Use `--chip-phase 23 24` north of 60.0° N, and
+split a box that crosses 60.0° N into two runs. `--chip-phase 0 0` starts the chips at the raster's corner,
+as `predict` did before this option. Blocks (`--block`) lie on a fixed grid from the raster's corner and are
+predicted whole, also where `--bbox` cuts them, so a pixel's value does not depend on `--bbox` either.
 
 **Numerics.** Inference is strict fp32. `predict` turns off TF32, which PyTorch enables by default for
-cuDNN convolutions on Ampere and newer GPUs and which moves outputs by up to 2e-3 WSCI.
+cuDNN convolutions on Ampere and newer GPUs and which moves outputs by up to 2e-3 WSCI, and restores the
+previous setting when it returns. When calling the model directly (Python API below), set
+`torch.backends.cudnn.allow_tf32 = False` yourself for the same numbers.
 
 The published product differs from a plain `predict` run in four ways:
 - **Pixel mask**: permanent water and no-data are masked with ESA WorldCover v200 (class 80 / 0,
